@@ -10,12 +10,13 @@ import {
   shortWindowLabel,
 } from "./format";
 import { hasPassedReset, isStale, ProviderState } from "./refresh";
+import { belongsToProvider, LimitPin, LimitPins, pinKey, pinnedWindow } from "./pins";
 import { resetNotes } from "./resets";
-import { ProviderId, QuotaProvider, QuotaSnapshot } from "./types";
+import { ProviderId, QuotaProvider, QuotaSnapshot, QuotaWindow } from "./types";
 
 type Entries = readonly { provider: QuotaProvider; state: ProviderState | undefined }[];
 
-export type QuickCheckFormat = "smart" | "all";
+export type QuickCheckFormat = "pins" | "smart" | "all";
 
 interface MainWindow {
   label: string;
@@ -93,14 +94,23 @@ export function searchSubtitle(entries: Entries, now: number): string | undefine
 }
 
 /**
- * Smart HUDs show the primary window's remaining quota and expand when other limits need attention.
- * The full format keeps all main windows. Both retain cached-reading warnings.
+ * Pins show the preferred window and critical relevant limits. Without active pins, use Smart.
+ * Smart and All Windows remain account-wide presets. Every format retains reading warnings.
  */
-export function quickCheckText(entries: Entries, now: number, format: QuickCheckFormat = "smart"): string {
+export function quickCheckText(
+  entries: Entries,
+  now: number,
+  format: QuickCheckFormat = "pins",
+  pins: LimitPins = { pins: [] },
+): string {
   if (entries.length === 0) {
     return "No providers enabled in t0kns's preferences";
   }
-  if (format === "smart") {
+  if (format === "pins") {
+    const texts = pinnedHudTexts(entries, pins, now);
+    if (texts) return fitHud(texts);
+  }
+  if (format !== "all") {
     return fitHud(entries.map(({ provider, state }) => smartProviderTexts(provider, state, now)));
   }
   const compact = entries.length > 1;
@@ -137,6 +147,97 @@ export function quickCheckText(entries: Entries, now: number, format: QuickCheck
 
 /** Raycast truncates longer HUDs; on Windows a two-provider HUD was cut off after about 65 characters. */
 export const HUD_MAX_LENGTH = 60;
+
+function pinnedHudTexts(entries: Entries, settings: LimitPins, now: number): string[][] | undefined {
+  const active = settings.pins.filter((pin) => entries.some(({ provider }) => belongsToProvider(pin, provider)));
+  const preferred = active.find((pin) => pinKey(pin) === settings.preferred) ?? active[0];
+  if (!preferred) return undefined;
+
+  // The preferred provider stays first even when provider discovery or the list filter has another order.
+  const ordered = [...entries].sort(
+    (a, b) => Number(belongsToProvider(preferred, b.provider)) - Number(belongsToProvider(preferred, a.provider)),
+  );
+  return ordered.flatMap(({ provider, state }) => {
+    const pins = active.filter((pin) => belongsToProvider(pin, provider));
+    const texts = pinnedProviderTexts(
+      provider,
+      state,
+      pins,
+      belongsToProvider(preferred, provider) ? preferred : undefined,
+      now,
+    );
+    return texts ? [texts] : [];
+  });
+}
+
+/** Account-wide caps affect every model; only explicitly pinned scoped caps are relevant. */
+function pinnedProviderTexts(
+  provider: QuotaProvider,
+  state: ProviderState | undefined,
+  pins: LimitPin[],
+  preferred: LimitPin | undefined,
+  now: number,
+): string[] | undefined {
+  const name = provider.id === "claude" ? "Claude" : providerTitle(provider.id);
+  const snapshot = state?.snapshot;
+  if (!snapshot) return smartProviderTexts(provider, state, now);
+
+  const selected = new Map<string, QuotaWindow>();
+  const resolve = (pin: LimitPin): QuotaWindow =>
+    pinnedWindow(pin, snapshot) ?? {
+      id: pin.windowId,
+      label: pin.label,
+      scope: pin.scope,
+      durationMinutes: pin.durationMinutes,
+    };
+  if (preferred) {
+    const window = resolve(preferred);
+    selected.set(window.id, window);
+  }
+  const pinned = pins.map(resolve);
+  const relevant = snapshot.windows.filter((window) => !window.scope || pinned.some((pin) => pin.id === window.id));
+  const critical = relevant
+    .filter((window) => window.usedPercent !== undefined && window.usedPercent > 90)
+    .sort((a, b) => (b.usedPercent ?? 0) - (a.usedPercent ?? 0));
+  for (const window of [...critical, ...pinned.filter((window) => window.usedPercent === undefined)]) {
+    selected.set(window.id, window);
+  }
+
+  const warnings = readingWarnings(state, now);
+  if (isStale(snapshot, now)) warnings.push(`cached ${formatAge(snapshot.checkedAt, now)}`);
+  if (relevant.some((window) => window.usedPercent === undefined && !selected.has(window.id))) {
+    warnings.push("some limits unavailable");
+  }
+  if (snapshot.windows.length === 0 && selected.size === 0) warnings.push("no quota data");
+  const { saved, expiring } = resetNotes(snapshot, now);
+  if (selected.size === 0 && warnings.length === 0 && !saved && !expiring) return undefined;
+
+  const describe = (level: number) => {
+    const compact = level >= 4 && [...selected.values()].every((window) => window.usedPercent !== undefined);
+    const values = [...selected.values()].map((window) => {
+      const label = pinnedWindowLabel(window);
+      const used = window.usedPercent;
+      if (used === undefined) return `${label} unavailable`;
+      const quota =
+        used >= 100 && level < 3
+          ? "limit reached"
+          : `${formatPercent(remainingPercent(used))}${compact ? "" : " left"}`;
+      const countdown =
+        used > 90 && window.resetsAt !== undefined && window.resetsAt > now && level < 2
+          ? ` · resets in ${formatDuration(window.resetsAt - now)}`
+          : "";
+      return `${label} ${quota}${countdown}`;
+    });
+    const quota = values.length > 0 ? `${values.join(compact ? ", " : " · ")}${compact ? " left" : ""}` : undefined;
+    return `${name}: ${[quota, ...warnings, saved, level === 0 ? expiring : undefined].filter(Boolean).join(" · ")}`;
+  };
+  return [0, 1, 2, 3, 4].map(describe).filter((text, i, texts) => i === 0 || text !== texts[i - 1]);
+}
+
+function pinnedWindowLabel(window: Pick<QuotaWindow, "scope" | "label" | "durationMinutes">): string {
+  const duration = shortWindowLabel(window.durationMinutes) ?? window.label;
+  return [window.scope, duration === "week" ? "wk" : duration].filter(Boolean).join(" ");
+}
 
 /**
  * Joins one text per provider, stepping the longest provider down to a shorter text until the HUD fits.

@@ -30,9 +30,13 @@
           "type": "dropdown",
           "required": false,
           "title": "HUD Format",
-          "description": "Smart shows your primary limit's remaining percentage and expands for low quota or usage ahead of elapsed time, with reset countdowns. All Windows shows all account-wide limits.",
-          "default": "smart",
+          "description": "Limit Pins shows your preferred pin and expands for critical pinned or account-wide limits (under 10% left). Pin limits in Check AI Limits; without pins it uses Smart. Smart expands for low quota or fast usage. All Windows shows all account-wide limits.",
+          "default": "pins",
           "data": [
+            {
+              "title": "Limit Pins",
+              "value": "pins"
+            },
             {
               "title": "Smart",
               "value": "smart"
@@ -117,7 +121,7 @@
     "dev": "ray develop --target release",
     "fix-lint": "ray lint --fix",
     "lint": "ray lint",
-    "test": "node tests/run.mjs",
+    "test": "node --import tsx --test tests/limit-pins.test.ts",
     "prepublishOnly": "echo \"\\n\\nIt seems like you are trying to publish the Raycast extension to npm.\\n\\nIf you did intend to publish it to npm, remove the \\`prepublishOnly\\` script and rerun \\`npm publish\\` again.\\nIf you wanted to publish it to the Raycast Store instead, use \\`npm run publish\\` instead.\\n\\n\" && exit 1",
     "publish": "npx @raycast/api@latest publish"
   }

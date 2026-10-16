@@ -13,6 +13,7 @@ import {
 } from "@raycast/api";
 import { getProgressIcon, useCachedState } from "@raycast/utils";
 import { ReactNode, useState } from "react";
+import { useLimitPins } from "../hooks/use-limit-pins";
 import { useNow, useQuota, useSearchSubtitle } from "../hooks/use-quota";
 import { buildDiagnostics } from "../quota/diagnostics";
 import {
@@ -28,10 +29,12 @@ import {
   remainingPercent,
 } from "../quota/format";
 import { creditsLeft, formatMoney, showsCredits } from "../quota/credits";
+import { findLimitPin, LimitPins, pinKey } from "../quota/pins";
 import { isStale, ProviderState } from "../quota/refresh";
 import { availableResets, expiringSoon } from "../quota/resets";
 import { ProviderId, QuotaProvider, QuotaSnapshot, QuotaWindow, UsageCredits } from "../quota/types";
 import { CreditsDetail } from "./credits-detail";
+import { LimitPinActions, LimitPinsList } from "./limit-pins";
 import { ProviderStateItem } from "./provider-state";
 import { LEVEL_COLORS, LEVEL_LABELS, QuotaDetail } from "./quota-detail";
 import { ResetsDetail } from "./resets-detail";
@@ -49,6 +52,7 @@ const USAGE_PAGES: Record<ProviderId, string> = {
 
 export function QuotaList({ providers }: { providers: readonly QuotaProvider[] }) {
   const { states, refresh } = useQuota(providers);
+  const { settings: pins } = useLimitPins();
   useSearchSubtitle(providers, states);
   const now = useNow();
   // Details show the charts, so they start open; the toggle is remembered per viewer.
@@ -88,6 +92,11 @@ export function QuotaList({ providers }: { providers: readonly QuotaProvider[] }
       </ActionPanel.Section>
       {extra}
       <ActionPanel.Section>
+        <Action.Push
+          title="Manage Limit Pins"
+          icon={Icon.Pin}
+          target={<LimitPinsList providers={providers} states={states} />}
+        />
         <Action title="Open Extension Preferences" icon={Icon.Gear} onAction={openExtensionPreferences} />
         <Action
           title="Copy Diagnostics"
@@ -109,6 +118,11 @@ export function QuotaList({ providers }: { providers: readonly QuotaProvider[] }
           actions={
             <ActionPanel>
               <Action title="Open Extension Preferences" icon={Icon.Gear} onAction={openExtensionPreferences} />
+              <Action.Push
+                title="Manage Limit Pins"
+                icon={Icon.Pin}
+                target={<LimitPinsList providers={providers} states={states} />}
+              />
             </ActionPanel>
           }
         />
@@ -142,6 +156,7 @@ export function QuotaList({ providers }: { providers: readonly QuotaProvider[] }
           now={now}
           compact={isShowingDetail}
           showProvider={visible.length > 1}
+          pins={pins}
           actions={actions}
         />
       ))}
@@ -157,10 +172,11 @@ interface ProviderSectionProps {
   compact: boolean;
   /** True when other providers' sections share the list, so rows need to say whose they are. */
   showProvider: boolean;
+  pins: LimitPins;
   actions: (extra?: ReactNode) => ReactNode;
 }
 
-function ProviderSection({ provider, state, now, compact, showProvider, actions }: ProviderSectionProps) {
+function ProviderSection({ provider, state, now, compact, showProvider, pins, actions }: ProviderSectionProps) {
   const snapshot = state.snapshot;
   const showStateItem = state.error !== undefined || !snapshot || snapshot.windows.length === 0;
   const sectionActions = (extra?: ReactNode) =>
@@ -181,18 +197,23 @@ function ProviderSection({ provider, state, now, compact, showProvider, actions 
       {showStateItem ? (
         <ProviderStateItem provider={provider.id} state={state} now={now} actions={sectionActions} />
       ) : null}
-      {snapshot?.windows.map((window) => (
-        <QuotaWindowItem
-          key={window.id}
-          snapshot={snapshot}
-          window={window}
-          state={state}
-          now={now}
-          compact={compact}
-          showProvider={showProvider}
-          actions={sectionActions}
-        />
-      ))}
+      {snapshot?.windows.map((window) => {
+        const pin = findLimitPin(pins, provider, window);
+        return (
+          <QuotaWindowItem
+            key={window.id}
+            snapshot={snapshot}
+            window={window}
+            state={state}
+            now={now}
+            compact={compact}
+            showProvider={showProvider}
+            pinStatus={pin ? (pinKey(pin) === pins.preferred ? "preferred" : "pinned") : undefined}
+            pinActions={<LimitPinActions provider={provider} window={window} />}
+            actions={sectionActions}
+          />
+        );
+      })}
       {snapshot && availableResets(snapshot.resets, now).count > 0 ? (
         <LimitResetsItem
           snapshot={snapshot}
@@ -240,12 +261,31 @@ interface QuotaWindowItemProps {
   now: number;
   compact: boolean;
   showProvider: boolean;
+  pinStatus?: "pinned" | "preferred";
+  pinActions?: ReactNode;
   actions: (extra?: ReactNode) => ReactNode;
 }
 
-function QuotaWindowItem({ snapshot, window, state, now, compact, showProvider, actions }: QuotaWindowItemProps) {
+function QuotaWindowItem({
+  snapshot,
+  window,
+  state,
+  now,
+  compact,
+  showProvider,
+  pinStatus,
+  pinActions,
+  actions,
+}: QuotaWindowItemProps) {
   const used = window.usedPercent;
   const accessories: List.Item.Accessory[] = [];
+
+  if (pinStatus) {
+    accessories.push({
+      icon: { source: pinStatus === "preferred" ? Icon.Star : Icon.Pin, tintColor: Color.Blue },
+      tooltip: pinStatus === "preferred" ? "Preferred in Quick Check" : "Pinned for critical alerts in Quick Check",
+    });
+  }
 
   if (used === undefined) {
     accessories.push({ tag: { value: "Unavailable", color: Color.SecondaryText }, tooltip: "Usage wasn't reported" });
@@ -296,13 +336,16 @@ function QuotaWindowItem({ snapshot, window, state, now, compact, showProvider, 
       accessories={accessories}
       detail={<QuotaDetail snapshot={snapshot} window={window} state={state} now={now} />}
       actions={actions(
-        // The detail panel shows short dates; the full timestamps stay one copy away.
-        <ActionPanel.Section>
-          {window.resetsAt !== undefined ? (
-            <Action.CopyToClipboard title="Copy Reset Time" content={formatDateTime(window.resetsAt)} />
-          ) : null}
-          <Action.CopyToClipboard title="Copy Last Checked Time" content={formatDateTime(snapshot.checkedAt)} />
-        </ActionPanel.Section>,
+        <>
+          {pinActions}
+          {/* The detail panel shows short dates; the full timestamps stay one copy away. */}
+          <ActionPanel.Section>
+            {window.resetsAt !== undefined ? (
+              <Action.CopyToClipboard title="Copy Reset Time" content={formatDateTime(window.resetsAt)} />
+            ) : null}
+            <Action.CopyToClipboard title="Copy Last Checked Time" content={formatDateTime(snapshot.checkedAt)} />
+          </ActionPanel.Section>
+        </>,
       )}
     />
   );
