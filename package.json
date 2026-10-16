@@ -1,0 +1,124 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "t0kns",
+  "title": "t0kns",
+  "description": "Check your AI coding subscription limits and when they reset",
+  "icon": "extension-icon.png",
+  "author": "jnk",
+  "platforms": [
+    "Windows"
+  ],
+  "categories": [
+    "Developer Tools"
+  ],
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "check-ai-limits",
+      "title": "Check AI Limits",
+      "description": "See remaining subscription quota and reset times for your AI coding tools.",
+      "mode": "view"
+    },
+    {
+      "name": "quick-check",
+      "title": "Quick Limit Check",
+      "description": "Shows your remaining AI subscription limits in a brief overlay. Assign it a hotkey for a one-key check.",
+      "mode": "no-view",
+      "preferences": [
+        {
+          "name": "hudFormat",
+          "type": "dropdown",
+          "required": false,
+          "title": "HUD Format",
+          "description": "Smart shows your primary limit's remaining percentage and expands for low quota or usage ahead of elapsed time, with reset countdowns. All Windows shows all account-wide limits.",
+          "default": "smart",
+          "data": [
+            {
+              "title": "Smart",
+              "value": "smart"
+            },
+            {
+              "title": "All Windows",
+              "value": "all"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "preferences": [
+    {
+      "name": "codexEnabled",
+      "type": "checkbox",
+      "required": false,
+      "default": true,
+      "title": "Codex",
+      "label": "Show Codex limits",
+      "description": "Read Codex subscription limits through the locally installed Codex CLI."
+    },
+    {
+      "name": "codexPath",
+      "type": "textfield",
+      "required": false,
+      "title": "Codex Executable",
+      "description": "Optional absolute path to the codex executable. Leave empty to search common install locations.",
+      "placeholder": "Absolute path to codex"
+    },
+    {
+      "name": "codexHome",
+      "type": "textfield",
+      "required": false,
+      "title": "Codex Home (Advanced)",
+      "description": "Optional absolute path used as CODEX_HOME for a custom Codex profile. Leave empty to use Codex's default.",
+      "placeholder": "~/.codex"
+    },
+    {
+      "name": "claudeEnabled",
+      "type": "checkbox",
+      "required": false,
+      "default": false,
+      "title": "Claude Code (Experimental)",
+      "label": "Show Claude Code limits",
+      "description": "Read Claude subscription limits through the locally installed Claude Code CLI. Uses an experimental Claude Code interface that may change without notice."
+    },
+    {
+      "name": "claudePath",
+      "type": "textfield",
+      "required": false,
+      "title": "Claude Executable",
+      "description": "Optional absolute path to the claude executable. Leave empty to search common install locations.",
+      "placeholder": "Absolute path to claude"
+    },
+    {
+      "name": "claudeConfigDir",
+      "type": "textfield",
+      "required": false,
+      "title": "Claude Config Folder (Advanced)",
+      "description": "Optional absolute path used as CLAUDE_CONFIG_DIR for a custom Claude Code profile. Leave empty to use Claude Code's default.",
+      "placeholder": "~/.claude"
+    }
+  ],
+  "tools": [],
+  "dependencies": {
+    "@raycast/api": "^1.104.20",
+    "@raycast/utils": "^2.2.7"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.2.0",
+    "@types/node": "22.19.17",
+    "@types/react": "19.0.10",
+    "eslint": "^10.5.0",
+    "prettier": "^3.8.5",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3"
+  },
+  "scripts": {
+    "build": "ray build --target release -e dist",
+    "dev": "ray develop --target release",
+    "fix-lint": "ray lint --fix",
+    "lint": "ray lint",
+    "test": "node tests/run.mjs",
+    "prepublishOnly": "echo \"\\n\\nIt seems like you are trying to publish the Raycast extension to npm.\\n\\nIf you did intend to publish it to npm, remove the \\`prepublishOnly\\` script and rerun \\`npm publish\\` again.\\nIf you wanted to publish it to the Raycast Store instead, use \\`npm run publish\\` instead.\\n\\n\" && exit 1",
+    "publish": "npx @raycast/api@latest publish"
+  }
+}

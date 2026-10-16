@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output and generated Raycast files
+/dist/
+/raycast-env.d.ts
+.raycast-swift-build/
+.swiftpm/
+compiled_raycast_swift
+compiled_raycast_rust
+*.tsbuildinfo
+
+# Test coverage and tooling caches
+/coverage/
+/.nyc_output/
+.cache/
+.eslintcache
+
+# Local environment files (keep example templates)
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs
+*.log
+
+# Local assistant settings and generated design reviews
+/.claude/
+/.impeccable/
+
+# Editor and operating-system files
+/.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
