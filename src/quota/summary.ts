@@ -14,7 +14,17 @@ import { belongsToProvider, LimitPin, LimitPins, pinKey, pinnedWindow } from "./
 import { resetNotes } from "./resets";
 import { ProviderId, QuotaProvider, QuotaSnapshot, QuotaWindow } from "./types";
 
-type Entries = readonly { provider: QuotaProvider; state: ProviderState | undefined }[];
+interface Entry {
+  provider: QuotaProvider;
+  state: ProviderState | undefined;
+}
+
+type Entries = readonly Entry[];
+
+export interface QuickCheckEntry extends Entry {
+  /** The command's shared deadline expired while this provider was still loading. */
+  timedOut?: boolean;
+}
 
 export type QuickCheckFormat = "pins" | "smart" | "all";
 
@@ -98,7 +108,7 @@ export function searchSubtitle(entries: Entries, now: number): string | undefine
  * Smart and All Windows remain account-wide presets. Every format retains reading warnings.
  */
 export function quickCheckText(
-  entries: Entries,
+  entries: readonly QuickCheckEntry[],
   now: number,
   format: QuickCheckFormat = "pins",
   pins: LimitPins = { pins: [] },
@@ -111,14 +121,15 @@ export function quickCheckText(
     if (texts) return fitHud(texts);
   }
   if (format !== "all") {
-    return fitHud(entries.map(({ provider, state }) => smartProviderTexts(provider, state, now)));
+    return fitHud(entries.map(({ provider, state, timedOut }) => smartProviderTexts(provider, state, now, timedOut)));
   }
   const compact = entries.length > 1;
   let hasQuota = false;
-  const parts = entries.map(({ provider, state }) => {
+  const parts = entries.map(({ provider, state, timedOut }) => {
     const name = compact && provider.id === "claude" ? "Claude" : providerTitle(provider.id);
     const snapshot = state?.snapshot;
     if (!snapshot) {
+      if (timedOut) return `${name}: unavailable`;
       const kind = state?.error?.kind ?? (isCoolingDown(state, now) ? "rate-limited" : undefined);
       if (compact) {
         return `${name}: ${kind ? COMPACT_FAILURES[kind] : "no reading yet"}`;
@@ -126,21 +137,22 @@ export function quickCheckText(
       return `${name}: ${kind ? shortFailure(provider.id, kind) : "no reading yet"}`;
     }
     const warnings = summaryNotes(state, snapshot, now);
+    const cached = timedOut ? `cached ${formatAge(snapshot.checkedAt, now)} · ` : "";
     const [first, ...rest] = mainWindows(snapshot);
     if (!first) {
-      return [`${name}: no quota data`, ...warnings].join(" · ");
+      return [`${name}: ${cached}no quota data`, ...warnings].join(" · ");
     }
     hasQuota = true;
     if (compact) {
       const values = [first, ...rest].map(
         (window) => `${window.label === "week" ? "wk" : window.label} ${window.remaining}`,
       );
-      const age = isStale(snapshot, now) ? ` (${formatAge(snapshot.checkedAt, now)})` : "";
-      return [`${name} ${values.join(" / ")}${age}`, ...warnings].join(" · ");
+      const age = !timedOut && isStale(snapshot, now) ? ` (${formatAge(snapshot.checkedAt, now)})` : "";
+      return [`${name} ${cached}${values.join(" / ")}${age}`, ...warnings].join(" · ");
     }
     const values = [`${first.remaining} left (${first.label})`, ...rest.map((w) => `${w.remaining} (${w.label})`)];
-    const age = isStale(snapshot, now) ? ` · from ${formatAge(snapshot.checkedAt, now)}` : "";
-    return [`${name}: ${values.join(" · ")}${age}`, ...warnings].join(" · ");
+    const age = !timedOut && isStale(snapshot, now) ? ` · from ${formatAge(snapshot.checkedAt, now)}` : "";
+    return [`${name}: ${cached}${values.join(" · ")}${age}`, ...warnings].join(" · ");
   });
   return `${compact && hasQuota ? "Left · " : ""}${parts.join(" | ")}`;
 }
@@ -148,7 +160,7 @@ export function quickCheckText(
 /** Raycast truncates longer HUDs; on Windows a two-provider HUD was cut off after about 65 characters. */
 export const HUD_MAX_LENGTH = 60;
 
-function pinnedHudTexts(entries: Entries, settings: LimitPins, now: number): string[][] | undefined {
+function pinnedHudTexts(entries: readonly QuickCheckEntry[], settings: LimitPins, now: number): string[][] | undefined {
   const active = settings.pins.filter((pin) => entries.some(({ provider }) => belongsToProvider(pin, provider)));
   const preferred = active.find((pin) => pinKey(pin) === settings.preferred) ?? active[0];
   if (!preferred) return undefined;
@@ -157,7 +169,7 @@ function pinnedHudTexts(entries: Entries, settings: LimitPins, now: number): str
   const ordered = [...entries].sort(
     (a, b) => Number(belongsToProvider(preferred, b.provider)) - Number(belongsToProvider(preferred, a.provider)),
   );
-  return ordered.flatMap(({ provider, state }) => {
+  return ordered.flatMap(({ provider, state, timedOut }) => {
     const pins = active.filter((pin) => belongsToProvider(pin, provider));
     const texts = pinnedProviderTexts(
       provider,
@@ -165,6 +177,7 @@ function pinnedHudTexts(entries: Entries, settings: LimitPins, now: number): str
       pins,
       belongsToProvider(preferred, provider) ? preferred : undefined,
       now,
+      timedOut,
     );
     return texts ? [texts] : [];
   });
@@ -177,10 +190,11 @@ function pinnedProviderTexts(
   pins: LimitPin[],
   preferred: LimitPin | undefined,
   now: number,
+  timedOut = false,
 ): string[] | undefined {
   const name = provider.id === "claude" ? "Claude" : providerTitle(provider.id);
   const snapshot = state?.snapshot;
-  if (!snapshot) return smartProviderTexts(provider, state, now);
+  if (!snapshot) return smartProviderTexts(provider, state, now, timedOut);
 
   const selected = new Map<string, QuotaWindow>();
   const resolve = (pin: LimitPin): QuotaWindow =>
@@ -204,7 +218,7 @@ function pinnedProviderTexts(
   }
 
   const warnings = readingWarnings(state, now);
-  if (isStale(snapshot, now)) warnings.push(`cached ${formatAge(snapshot.checkedAt, now)}`);
+  if (timedOut || isStale(snapshot, now)) warnings.push(`cached ${formatAge(snapshot.checkedAt, now)}`);
   if (relevant.some((window) => window.usedPercent === undefined && !selected.has(window.id))) {
     warnings.push("some limits unavailable");
   }
@@ -263,10 +277,16 @@ function fitHud(texts: readonly string[][]): string {
 }
 
 /** The provider's smart HUD text, followed by shorter versions for when the HUD runs out of space. */
-function smartProviderTexts(provider: QuotaProvider, state: ProviderState | undefined, now: number): string[] {
+function smartProviderTexts(
+  provider: QuotaProvider,
+  state: ProviderState | undefined,
+  now: number,
+  timedOut = false,
+): string[] {
   const name = provider.id === "claude" ? "Claude" : providerTitle(provider.id);
   const snapshot = state?.snapshot;
   if (!snapshot) {
+    if (timedOut) return [`${name}: unavailable`];
     const kind = state?.error?.kind ?? (isCoolingDown(state, now) ? "rate-limited" : undefined);
     return [`${name}: ${kind ? COMPACT_FAILURES[kind] : "no reading yet"}`];
   }
@@ -274,7 +294,9 @@ function smartProviderTexts(provider: QuotaProvider, state: ProviderState | unde
   // Saved resets matter most once a limit has run out, so that note stays at every length;
   // an expiring reset is the first detail to go.
   const { saved, expiring } = resetNotes(snapshot, now);
-  const texts = smartSnapshotTexts(name, snapshot, state, now).map((text) => (saved ? `${text} · ${saved}` : text));
+  const texts = smartSnapshotTexts(name, snapshot, state, now, timedOut).map((text) =>
+    saved ? `${text} · ${saved}` : text,
+  );
   return expiring ? [`${texts[0]} · ${expiring}`, ...texts] : texts;
 }
 
@@ -283,12 +305,28 @@ function smartSnapshotTexts(
   snapshot: QuotaSnapshot,
   state: ProviderState | undefined,
   now: number,
+  timedOut: boolean,
 ): string[] {
   const windows = mainWindows(snapshot);
   const warnings = readingWarnings(state, now);
   const stale = isStale(snapshot, now);
   const partial = snapshot.windows.some((window) => !window.scope && window.usedPercent === undefined);
   if (partial && windows.length > 0) warnings.push("some limits unavailable");
+
+  if (timedOut) {
+    const values = windows.length > 0 ? windows.map(windowQuotaText) : ["no quota data"];
+    const cached = `cached ${formatAge(snapshot.checkedAt, now)}`;
+    const compact =
+      windows.length > 0
+        ? windows.map((window) => `${window.label === "week" ? "wk" : window.label} ${window.remaining}`).join("/")
+        : "no quota data";
+    // Keep the fallback label and all quota values visible when two providers share the HUD.
+    return [
+      `${name}: ${[cached, ...warnings, ...values].join(" · ")}`,
+      `${name}: ${["cached", ...warnings, ...values].join(" · ")}`,
+      `${name}: cached ${[...warnings, compact].join(" · ")}`,
+    ];
+  }
 
   if (warnings.length > 0 || stale || windows.length === 0) {
     const values = windows.length > 0 ? windows.map(windowQuotaText) : ["no quota data"];

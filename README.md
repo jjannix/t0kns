@@ -9,6 +9,8 @@ Pin the limits you actually care about. Quick Check can show your preferred limi
 - **Check AI Limits** — view remaining quota, reset times, and account details.
 - **Quick Limit Check** — show your preferred limit in a brief overlay, with critical quota alerts. Assign a Raycast hotkey for quick access.
 
+Quick Check refreshes share a two-second deadline; slower providers show labeled cached readings or an unavailable status.
+
 ## Setup
 
 Install Raycast for Windows and sign in to your subscription through the Codex or Claude Code CLI. Codex is enabled by default; Claude Code is experimental and can be enabled in the extension preferences.
