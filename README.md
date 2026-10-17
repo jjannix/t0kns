@@ -2,10 +2,12 @@
 
 A Raycast extension for Windows to check Codex and Claude Code subscription limits and reset times.
 
+Pin the limits you actually care about. Quick Check can show your preferred limit and expand when another relevant quota becomes critical, including model-specific caps such as Claude's Opus limit.
+
 ## Commands
 
 - **Check AI Limits** — view remaining quota, reset times, and account details.
-- **Quick Limit Check** — show a brief quota overlay. Assign a Raycast hotkey for quick access.
+- **Quick Limit Check** — show your preferred limit in a brief overlay, with critical quota alerts. Assign a Raycast hotkey for quick access.
 
 ## Setup
 
@@ -15,17 +17,32 @@ If a CLI isn't detected, set its executable path in preferences. Existing custom
 
 ## Limit Pins
 
-In **Check AI Limits**, select an account-wide or model-specific limit and choose **Pin for Quick Check** from its actions. For example, pin Codex's 5-hour limit and Claude's weekly Opus limit. The first pin becomes preferred; **Make Preferred Limit** pins and prefers any other limit, including one from another provider.
+Choose the provider and exact limit Quick Check should watch:
+
+1. Open **Check AI Limits** and select an account-wide or model-specific limit.
+2. Open its actions and choose **Pin for Quick Check**. Repeat for other limits you care about.
+3. Choose **Make Preferred Limit** on the limit you want to see by default. This also pins it; your first pin is preferred automatically.
+4. In **Quick Limit Check** preferences, set **HUD Format** to **Limit Pins**.
+
+For example, prefer Codex's 5-hour limit and also pin Claude's weekly Opus limit. While both are healthy, the overlay shows Codex. When Opus has only 1% left, it expands:
+
+```text
+Codex: 5h 80% left | Claude: Opus wk 1% left
+```
+
+This catches a model cap even when Claude's account-wide quota looks healthy.
 
 Quick Limit Check's **HUD Format** offers three presets:
 
-- **Limit Pins** (default) shows your preferred pin. It expands when another pinned limit or an enabled provider's account-wide limit has **less than 10% left**, including exhausted limits. Other model limits stay out of the HUD unless pinned. Missing pinned limits show as unavailable.
+- **Limit Pins** (default) shows your preferred pin. It expands when another pinned limit or an enabled provider's account-wide limit has **less than 10% left**, including exhausted limits. Other model limits stay out of the HUD unless pinned.
 - **Smart** shows each provider's primary account-wide limit and expands for low quota or usage ahead of elapsed time.
 - **All Windows** shows all account-wide limits.
 
 With no pins for the enabled profiles, Limit Pins uses Smart. Existing Smart and All Windows selections are kept; choose Limit Pins in Quick Limit Check's preferences to use saved pins.
 
-Pinned rows have a pin icon; the preferred row has a star. Use **Manage Limit Pins** in the actions to change the preferred pin or remove saved choices, including limits no longer reported or providers you've disabled. Pins are saved locally per provider profile, survive quota cache refreshes, and resume when that profile is enabled again. A missing preferred provider yields to the next enabled pin. Cached readings, failed refreshes, and passed resets still show warnings.
+Pinned rows have a pin icon; the preferred row has a star. Use **Unpin from Quick Check** on a row, or **Manage Limit Pins** in the actions to change your preferred pin and remove saved choices, including limits no longer reported or providers you've disabled.
+
+Pins are saved locally per provider profile and survive quota cache refreshes. Disabled profiles keep their pins for when they're enabled again; if the preferred provider is disabled, Quick Check uses the next enabled pin. Missing pinned limits show as unavailable. Cached readings, failed refreshes, and passed resets still show warnings.
 
 ## Development
 
