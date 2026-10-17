@@ -15,6 +15,7 @@ import { getProgressIcon, useCachedState } from "@raycast/utils";
 import { ReactNode, useState } from "react";
 import { useLimitPins } from "../hooks/use-limit-pins";
 import { useNow, useQuota, useSearchSubtitle } from "../hooks/use-quota";
+import { ResetReminderController, useResetReminders } from "../hooks/use-reset-reminders";
 import { buildDiagnostics } from "../quota/diagnostics";
 import {
   formatAge,
@@ -32,12 +33,14 @@ import { creditsLeft, formatMoney, showsCredits } from "../quota/credits";
 import { findLimitPin, LimitPins, pinKey } from "../quota/pins";
 import { isStale, ProviderState } from "../quota/refresh";
 import { availableResets, expiringSoon } from "../quota/resets";
+import { ResetReminder, resetReminderId } from "../quota/reminders";
 import { ProviderId, QuotaProvider, QuotaSnapshot, QuotaWindow, UsageCredits } from "../quota/types";
 import { CreditsDetail } from "./credits-detail";
 import { LimitPinActions, LimitPinsList } from "./limit-pins";
 import { ProviderStateItem } from "./provider-state";
 import { LEVEL_COLORS, LEVEL_LABELS, QuotaDetail } from "./quota-detail";
 import { ResetsDetail } from "./resets-detail";
+import { ResetReminderActions, ResetRemindersList } from "./reset-reminders";
 
 const COPY_DIAGNOSTICS_SHORTCUT: Keyboard.Shortcut = { modifiers: ["ctrl", "shift"], key: "d" };
 
@@ -53,6 +56,7 @@ const USAGE_PAGES: Record<ProviderId, string> = {
 export function QuotaList({ providers }: { providers: readonly QuotaProvider[] }) {
   const { states, refresh } = useQuota(providers);
   const { settings: pins } = useLimitPins();
+  const reminders = useResetReminders();
   useSearchSubtitle(providers, states);
   const now = useNow();
   // Details show the charts, so they start open; the toggle is remembered per viewer.
@@ -93,6 +97,12 @@ export function QuotaList({ providers }: { providers: readonly QuotaProvider[] }
       {extra}
       <ActionPanel.Section>
         <Action.Push
+          title="Manage Reset Reminders"
+          icon={Icon.Bell}
+          target={<ResetRemindersList />}
+          onPop={reminders.refresh}
+        />
+        <Action.Push
           title="Manage Limit Pins"
           icon={Icon.Pin}
           target={<LimitPinsList providers={providers} states={states} />}
@@ -118,6 +128,12 @@ export function QuotaList({ providers }: { providers: readonly QuotaProvider[] }
           actions={
             <ActionPanel>
               <Action title="Open Extension Preferences" icon={Icon.Gear} onAction={openExtensionPreferences} />
+              <Action.Push
+                title="Manage Reset Reminders"
+                icon={Icon.Bell}
+                target={<ResetRemindersList />}
+                onPop={reminders.refresh}
+              />
               <Action.Push
                 title="Manage Limit Pins"
                 icon={Icon.Pin}
@@ -157,6 +173,7 @@ export function QuotaList({ providers }: { providers: readonly QuotaProvider[] }
           compact={isShowingDetail}
           showProvider={visible.length > 1}
           pins={pins}
+          reminders={reminders}
           actions={actions}
         />
       ))}
@@ -173,10 +190,20 @@ interface ProviderSectionProps {
   /** True when other providers' sections share the list, so rows need to say whose they are. */
   showProvider: boolean;
   pins: LimitPins;
+  reminders: ResetReminderController;
   actions: (extra?: ReactNode) => ReactNode;
 }
 
-function ProviderSection({ provider, state, now, compact, showProvider, pins, actions }: ProviderSectionProps) {
+function ProviderSection({
+  provider,
+  state,
+  now,
+  compact,
+  showProvider,
+  pins,
+  reminders,
+  actions,
+}: ProviderSectionProps) {
   const snapshot = state.snapshot;
   const showStateItem = state.error !== undefined || !snapshot || snapshot.windows.length === 0;
   const sectionActions = (extra?: ReactNode) =>
@@ -199,6 +226,9 @@ function ProviderSection({ provider, state, now, compact, showProvider, pins, ac
       ) : null}
       {snapshot?.windows.map((window) => {
         const pin = findLimitPin(pins, provider, window);
+        const reminder = reminders.reminders.find(
+          (reminder) => reminder.id === resetReminderId(snapshot, window) && reminder.resetsAt > now,
+        );
         return (
           <QuotaWindowItem
             key={window.id}
@@ -210,6 +240,8 @@ function ProviderSection({ provider, state, now, compact, showProvider, pins, ac
             showProvider={showProvider}
             pinStatus={pin ? (pinKey(pin) === pins.preferred ? "preferred" : "pinned") : undefined}
             pinActions={<LimitPinActions provider={provider} window={window} />}
+            reminder={reminder}
+            reminderActions={<ResetReminderActions snapshot={snapshot} window={window} controller={reminders} />}
             actions={sectionActions}
           />
         );
@@ -263,6 +295,8 @@ interface QuotaWindowItemProps {
   showProvider: boolean;
   pinStatus?: "pinned" | "preferred";
   pinActions?: ReactNode;
+  reminder?: ResetReminder;
+  reminderActions?: ReactNode;
   actions: (extra?: ReactNode) => ReactNode;
 }
 
@@ -275,10 +309,19 @@ function QuotaWindowItem({
   showProvider,
   pinStatus,
   pinActions,
+  reminder,
+  reminderActions,
   actions,
 }: QuotaWindowItemProps) {
   const used = window.usedPercent;
   const accessories: List.Item.Accessory[] = [];
+
+  if (reminder) {
+    accessories.push({
+      icon: { source: Icon.Bell, tintColor: Color.Blue },
+      tooltip: `Reset reminder around ${formatDateTime(reminder.resetsAt)}`,
+    });
+  }
 
   if (pinStatus) {
     accessories.push({
@@ -337,6 +380,7 @@ function QuotaWindowItem({
       detail={<QuotaDetail snapshot={snapshot} window={window} state={state} now={now} />}
       actions={actions(
         <>
+          {reminderActions}
           {pinActions}
           {/* The detail panel shows short dates; the full timestamps stay one copy away. */}
           <ActionPanel.Section>

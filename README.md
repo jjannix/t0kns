@@ -44,6 +44,16 @@ Pinned rows have a pin icon; the preferred row has a star. Use **Unpin from Quic
 
 Pins are saved locally per provider profile and survive quota cache refreshes. Disabled profiles keep their pins for when they're enabled again; if the preferred provider is disabled, Quick Check uses the next enabled pin. Missing pinned limits show as unavailable. Cached readings, failed refreshes, and passed resets still show warnings.
 
+## Reset reminders
+
+When a limit is exhausted and has a future reset time, open its actions in **Check AI Limits** and choose **Remind Me Around This Reset**. This schedules one Windows notification for that reported reset. It works for both account-wide and model-specific limits, independently of Limit Pins.
+
+A bell marks limits with pending reminders. Reminder titles include the reported account label, a short account identifier when available, and the profile, so reminders for different accounts or profiles remain distinguishable. Choose **Cancel Reset Reminder** on the row, or **Manage Reset Reminders** in the actions to see and cancel pending reminders, including ones for providers you've since disabled. If a reading reports a different reset time, **Update Reminder to This Reset** replaces the existing reminder; reminders don't repeat automatically.
+
+Windows delivers the notification without keeping Raycast open, polling quota, or leaving a timer process running. Clicking it opens **Check AI Limits**. The message says the reported reset time has arrived; it doesn't assume your quota has been restored.
+
+Notifications use Windows PowerShell's sender identity, so allow its notifications in Windows settings if needed. Windows notification settings and Do Not Disturb can affect delivery; Windows may drop a scheduled notification when the computer stays asleep or off beyond its delivery window. See [Windows scheduled notification behavior](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/app-notifications-scheduled).
+
 ## Development
 
 With Node.js 22.22.2 or newer and npm installed, run:
