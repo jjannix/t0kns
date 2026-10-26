@@ -10,10 +10,13 @@ interface FailureCopy {
   guidance: string;
   /** A command the user can run to resolve the state, offered as a copy action. */
   command?: { title: string; value: string };
+  /** A page the user can open to resolve the state. */
+  link?: { title: string; url: string };
 }
 
 /** Commands and wording that differ between the providers' CLIs. */
-interface ProviderSetup {
+interface CliSetup {
+  type: "cli";
   install: string;
   update: string;
   login: string;
@@ -28,8 +31,26 @@ interface ProviderSetup {
   protocolNote: string;
 }
 
+/** Wording for a provider read with an API key from the preferences instead of a local CLI. */
+interface ApiKeySetup {
+  type: "api-key";
+  /** The account's owner: where the key is created and the only place it is sent. */
+  vendor: string;
+  /** Name of the password preference holding the key. */
+  keyPreference: string;
+  /** Where the user creates a key. */
+  keyUrl: string;
+  /** Where the user checks that the plan is active. */
+  planUrl: string;
+  /** Why a response may be unreadable. */
+  protocolNote: string;
+}
+
+type ProviderSetup = CliSetup | ApiKeySetup;
+
 const SETUP: Record<ProviderId, ProviderSetup> = {
   codex: {
+    type: "cli",
     install: "npm install -g @openai/codex",
     update: "npm install -g @openai/codex@latest",
     login: "codex login",
@@ -40,6 +61,7 @@ const SETUP: Record<ProviderId, ProviderSetup> = {
     protocolNote: "Codex may have changed its protocol.",
   },
   claude: {
+    type: "cli",
     install: "npm install -g @anthropic-ai/claude-code",
     update: "claude update",
     login: "claude auth login",
@@ -50,11 +72,90 @@ const SETUP: Record<ProviderId, ProviderSetup> = {
       "run `claude auth login` and sign in with the Claude account that has your plan. Claude Code also needs to be set up without an API key or cloud provider",
     protocolNote: "Claude Code's usage interface is experimental and may have changed.",
   },
+  glm: {
+    type: "api-key",
+    vendor: "Z.ai",
+    keyPreference: "GLM API Key",
+    keyUrl: "https://z.ai/manage-apikey/apikey-list",
+    planUrl: "https://z.ai/manage-apikey/coding-plan/personal/my-plan",
+    protocolNote: "Z.ai's usage endpoint is undocumented and may have changed.",
+  },
 };
 
 export function failureCopy(provider: ProviderId, failure: QuotaFailure, now: number): FailureCopy {
-  const name = providerTitle(provider);
   const setup = SETUP[provider];
+  return setup.type === "api-key"
+    ? apiKeyFailureCopy(providerTitle(provider), setup, failure, now)
+    : cliFailureCopy(providerTitle(provider), setup, failure, now);
+}
+
+function rateLimitedCopy(name: string, failure: QuotaFailure, now: number): FailureCopy {
+  return {
+    title: `${name} is rate limited`,
+    guidance: failure.retryAfter
+      ? `Usage checks are paused until ${formatShortDateTime(failure.retryAfter, now)} (${formatRelative(failure.retryAfter, now)}).`
+      : "Usage checks are paused for a few minutes.",
+  };
+}
+
+function apiKeyFailureCopy(name: string, setup: ApiKeySetup, failure: QuotaFailure, now: number): FailureCopy {
+  const getKey = { title: "Open API Key Page", url: setup.keyUrl };
+  switch (failure.kind) {
+    case "signed-out":
+      if (failure.code === "auth:no-key") {
+        return {
+          title: `Add your ${name} API key`,
+          guidance: `Create a Coding Plan API key in your ${setup.vendor} account (API Keys, Personal Coding Plan), then paste it into **${setup.keyPreference}** in the extension preferences and refresh. Raycast stores it as a password preference, and t0kns only sends it to ${setup.vendor} to read your limits.`,
+          link: getKey,
+        };
+      }
+      if (failure.code === "auth:bad-key") {
+        return {
+          title: `Check your ${name} API key`,
+          guidance: `The key has a space, line break, or other character that an API key can't contain, which often happens when copying it. Paste it into **${setup.keyPreference}** in the extension preferences again, then refresh.`,
+          link: getKey,
+        };
+      }
+      return {
+        title: `${name} rejected the API key`,
+        guidance: `Check **${setup.keyPreference}** in the extension preferences, or create a new key in your ${setup.vendor} account, then refresh.`,
+        link: getKey,
+      };
+    case "invalid-config":
+      return {
+        title: `Check ${name} preferences`,
+        guidance: `${failure.message}\n\nOpen the extension preferences to correct the setting, then refresh.`,
+      };
+    case "unsupported-auth":
+      return {
+        title: `${name} Coding Plan unavailable`,
+        guidance: `${failure.message}\n\nThis is not the same as having quota left. Check in your ${setup.vendor} account that your plan is active and hasn't expired and that the account isn't restricted, and that **${setup.keyPreference}** is a Coding Plan key, then refresh.`,
+        link: { title: "Open Coding Plan Page", url: setup.planUrl },
+      };
+    case "rate-limited":
+      return rateLimitedCopy(name, failure, now);
+    case "timeout":
+      return {
+        title: `${name} didn't respond in time`,
+        guidance: `${failure.message}\n\nTry again. If it keeps happening, check your network connection.`,
+      };
+    case "malformed-response":
+      return {
+        title: `Unexpected response from ${name}`,
+        guidance: `${failure.message}\n\n${setup.protocolNote} Updating t0kns usually resolves this.`,
+      };
+    case "cli-missing":
+    case "unsupported-version":
+    case "cancelled":
+    case "unavailable":
+      return {
+        title: `Couldn't read ${name} limits`,
+        guidance: `${failure.message}\n\nTry again in a moment.`,
+      };
+  }
+}
+
+function cliFailureCopy(name: string, setup: CliSetup, failure: QuotaFailure, now: number): FailureCopy {
   switch (failure.kind) {
     case "cli-missing":
       if (failure.code === "path:not-found") {
@@ -92,12 +193,7 @@ export function failureCopy(provider: ProviderId, failure: QuotaFailure, now: nu
         command: { title: "Copy Update Command", value: setup.update },
       };
     case "rate-limited":
-      return {
-        title: `${name} is rate limited`,
-        guidance: failure.retryAfter
-          ? `Usage checks are paused until ${formatShortDateTime(failure.retryAfter, now)} (${formatRelative(failure.retryAfter, now)}).`
-          : "Usage checks are paused for a few minutes.",
-      };
+      return rateLimitedCopy(name, failure, now);
     case "timeout":
       return {
         title: `${name} didn't respond in time`,
@@ -170,9 +266,10 @@ export function ProviderStateItem({ provider, state, now, actions }: ProviderSta
       keywords={[name, copy.title]}
       detail={<List.Item.Detail markdown={markdown} />}
       actions={actions(
-        copy.command ? (
+        copy.command || copy.link ? (
           <ActionPanel.Section>
-            <Action.CopyToClipboard title={copy.command.title} content={copy.command.value} />
+            {copy.link ? <Action.OpenInBrowser title={copy.link.title} url={copy.link.url} /> : null}
+            {copy.command ? <Action.CopyToClipboard title={copy.command.title} content={copy.command.value} /> : null}
           </ActionPanel.Section>
         ) : undefined,
       )}

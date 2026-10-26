@@ -18,6 +18,7 @@ import {
   positiveNumber,
   spawnFailure,
   truncate,
+  unixToEpochMs,
   withDeadline,
 } from "./probe-support";
 
@@ -347,11 +348,6 @@ function parseWindow(
 
 function knownPlan(bucket: Bucket | undefined): string | undefined {
   return bucket?.plan === "unknown" ? undefined : bucket?.plan;
-}
-
-/** Codex reports Unix seconds. Values this large are already milliseconds (1e11 s is past year 5000). */
-export function unixToEpochMs(value: number): number {
-  return value >= 1e11 ? Math.round(value) : Math.round(value * 1000);
 }
 
 function parseCliVersion(initializeResult: unknown): string | undefined {

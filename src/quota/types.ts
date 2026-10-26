@@ -1,4 +1,10 @@
-export type ProviderId = "codex" | "claude";
+export const PROVIDER_IDS = ["codex", "claude", "glm"] as const;
+
+export type ProviderId = (typeof PROVIDER_IDS)[number];
+
+export function isProviderId(value: unknown): value is ProviderId {
+  return PROVIDER_IDS.some((id) => id === value);
+}
 
 export interface QuotaWindow {
   /** Stable across refreshes, e.g. `codex:primary`. */

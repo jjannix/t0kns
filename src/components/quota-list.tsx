@@ -45,12 +45,13 @@ import { ResetReminderActions, ResetRemindersList } from "./reset-reminders";
 const COPY_DIAGNOSTICS_SHORTCUT: Keyboard.Shortcut = { modifiers: ["ctrl", "shift"], key: "d" };
 
 /** Provider logos that tell rows apart when several providers' sections share the list. */
-const PROVIDER_ICONS: Record<ProviderId, Image.Asset> = { claude: "claude.svg", codex: "codex.svg" };
+const PROVIDER_ICONS: Record<ProviderId, Image.Asset> = { claude: "claude.svg", codex: "codex.svg", glm: "glm.svg" };
 
 /** Each provider's own usage page, for comparing readings or checking limits when the CLI can't. */
 const USAGE_PAGES: Record<ProviderId, string> = {
   claude: "https://claude.ai/settings/usage",
   codex: "https://chatgpt.com/codex/settings/usage",
+  glm: "https://z.ai/manage-apikey/coding-plan/personal/my-plan",
 };
 
 export function QuotaList({ providers }: { providers: readonly QuotaProvider[] }) {
@@ -124,7 +125,7 @@ export function QuotaList({ providers }: { providers: readonly QuotaProvider[] }
         <List.EmptyView
           icon={Icon.Gauge}
           title="No providers enabled"
-          description="Enable Codex or Claude Code in the extension preferences to see their limits."
+          description="Enable Codex, Claude Code, or GLM in the extension preferences to see their limits."
           actions={
             <ActionPanel>
               <Action title="Open Extension Preferences" icon={Icon.Gear} onAction={openExtensionPreferences} />

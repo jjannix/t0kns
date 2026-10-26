@@ -2,7 +2,7 @@ import {
   AccountIdentity,
   LimitReset,
   LimitResets,
-  ProviderId,
+  PROVIDER_IDS,
   QuotaProvider,
   QuotaSnapshot,
   QuotaWindow,
@@ -24,7 +24,6 @@ export interface StoredProviderState {
 }
 
 const KEY_PREFIX = "quota:v1:";
-const PROVIDERS: readonly ProviderId[] = ["codex", "claude"];
 
 /**
  * Persists the last successful normalized snapshot and any cooldown per provider, source, and profile.
@@ -83,7 +82,7 @@ function parseSnapshot(value: unknown): QuotaSnapshot | undefined {
   if (!isRecord(value) || !Array.isArray(value.windows)) {
     return undefined;
   }
-  const provider = PROVIDERS.find((id) => id === value.provider);
+  const provider = PROVIDER_IDS.find((id) => id === value.provider);
   const source = string(value.source);
   const profile = string(value.profile);
   const checkedAt = finite(value.checkedAt);

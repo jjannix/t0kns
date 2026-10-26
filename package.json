@@ -100,6 +100,23 @@
       "title": "Claude Config Folder (Advanced)",
       "description": "Optional absolute path used as CLAUDE_CONFIG_DIR for a custom Claude Code profile. Leave empty to use Claude Code's default.",
       "placeholder": "~/.claude"
+    },
+    {
+      "name": "glmEnabled",
+      "type": "checkbox",
+      "required": false,
+      "default": false,
+      "title": "GLM Coding Plan (Experimental)",
+      "label": "Show GLM Coding Plan limits",
+      "description": "Read Z.ai GLM Coding Plan limits with an API key. Uses Z.ai's usage monitoring endpoint, which is undocumented and may change without notice."
+    },
+    {
+      "name": "glmApiKey",
+      "type": "password",
+      "required": false,
+      "title": "GLM API Key",
+      "description": "API key from your Z.ai account. It is only sent to Z.ai to read your limits.",
+      "placeholder": "Paste your Z.ai API key"
     }
   ],
   "tools": [],
@@ -121,7 +138,7 @@
     "dev": "ray develop --target release",
     "fix-lint": "ray lint --fix",
     "lint": "ray lint",
-    "test": "node --import tsx --test tests/limit-pins.test.ts tests/reset-reminders.test.ts tests/quick-check.test.ts",
+    "test": "node --import tsx --test tests/limit-pins.test.ts tests/reset-reminders.test.ts tests/quick-check.test.ts tests/glm-provider.test.ts",
     "prepublishOnly": "echo \"\\n\\nIt seems like you are trying to publish the Raycast extension to npm.\\n\\nIf you did intend to publish it to npm, remove the \\`prepublishOnly\\` script and rerun \\`npm publish\\` again.\\nIf you wanted to publish it to the Raycast Store instead, use \\`npm run publish\\` instead.\\n\\n\" && exit 1",
     "publish": "npx @raycast/api@latest publish"
   }

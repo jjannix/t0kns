@@ -5,6 +5,7 @@ import {
   formatDuration,
   formatPercent,
   paceOf,
+  providerShortTitle,
   providerTitle,
   remainingPercent,
   shortWindowLabel,
@@ -53,7 +54,17 @@ const SHORT_FAILURES: Record<Exclude<QuotaErrorKind, "unsupported-auth">, string
 const NO_SUBSCRIPTION_SIGN_IN: Record<ProviderId, string> = {
   codex: "not signed in with ChatGPT",
   claude: "not signed in with a Claude plan",
+  glm: "no active Coding Plan",
 };
+
+/** API-key providers have no sign-in; a missing or rejected key is reported as "signed-out". */
+const PROVIDER_FAILURES: Partial<Record<ProviderId, Partial<Record<QuotaErrorKind, string>>>> = {
+  glm: { "signed-out": "check API key", "unsupported-auth": "no active plan" },
+};
+
+function providerFailure(provider: ProviderId, kind: QuotaErrorKind, fallback: string): string {
+  return PROVIDER_FAILURES[provider]?.[kind] ?? fallback;
+}
 
 /** HUD space is shared by both providers; detailed recovery guidance stays in Check AI Limits. */
 const COMPACT_FAILURES: Record<QuotaErrorKind, string> = {
@@ -70,7 +81,9 @@ const COMPACT_FAILURES: Record<QuotaErrorKind, string> = {
 };
 
 function shortFailure(provider: ProviderId, kind: QuotaErrorKind): string {
-  return kind === "unsupported-auth" ? NO_SUBSCRIPTION_SIGN_IN[provider] : SHORT_FAILURES[kind];
+  return kind === "unsupported-auth"
+    ? NO_SUBSCRIPTION_SIGN_IN[provider]
+    : providerFailure(provider, kind, SHORT_FAILURES[kind]);
 }
 
 /**
@@ -85,7 +98,7 @@ export function searchSubtitle(entries: Entries, now: number): string | undefine
       const snapshot = state?.snapshot;
       if (!snapshot) {
         if (state?.error?.kind === "signed-out") {
-          return `${name}: signed out`;
+          return `${name}: ${providerFailure(provider.id, "signed-out", "signed out")}`;
         }
         if (isCoolingDown(state, now)) {
           return `${name}: rate limited`;
@@ -126,13 +139,13 @@ export function quickCheckText(
   const compact = entries.length > 1;
   let hasQuota = false;
   const parts = entries.map(({ provider, state, timedOut }) => {
-    const name = compact && provider.id === "claude" ? "Claude" : providerTitle(provider.id);
+    const name = compact ? providerShortTitle(provider.id) : providerTitle(provider.id);
     const snapshot = state?.snapshot;
     if (!snapshot) {
       if (timedOut) return `${name}: unavailable`;
       const kind = state?.error?.kind ?? (isCoolingDown(state, now) ? "rate-limited" : undefined);
       if (compact) {
-        return `${name}: ${kind ? COMPACT_FAILURES[kind] : "no reading yet"}`;
+        return `${name}: ${kind ? providerFailure(provider.id, kind, COMPACT_FAILURES[kind]) : "no reading yet"}`;
       }
       return `${name}: ${kind ? shortFailure(provider.id, kind) : "no reading yet"}`;
     }
@@ -192,7 +205,7 @@ function pinnedProviderTexts(
   now: number,
   timedOut = false,
 ): string[] | undefined {
-  const name = provider.id === "claude" ? "Claude" : providerTitle(provider.id);
+  const name = providerShortTitle(provider.id);
   const snapshot = state?.snapshot;
   if (!snapshot) return smartProviderTexts(provider, state, now, timedOut);
 
@@ -283,12 +296,12 @@ function smartProviderTexts(
   now: number,
   timedOut = false,
 ): string[] {
-  const name = provider.id === "claude" ? "Claude" : providerTitle(provider.id);
+  const name = providerShortTitle(provider.id);
   const snapshot = state?.snapshot;
   if (!snapshot) {
     if (timedOut) return [`${name}: unavailable`];
     const kind = state?.error?.kind ?? (isCoolingDown(state, now) ? "rate-limited" : undefined);
-    return [`${name}: ${kind ? COMPACT_FAILURES[kind] : "no reading yet"}`];
+    return [`${name}: ${kind ? providerFailure(provider.id, kind, COMPACT_FAILURES[kind]) : "no reading yet"}`];
   }
 
   // Saved resets matter most once a limit has run out, so that note stays at every length;

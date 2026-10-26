@@ -1,4 +1,4 @@
-import { ProviderId, QuotaProvider, QuotaSnapshot, QuotaWindow } from "./types";
+import { isProviderId, ProviderId, QuotaProvider, QuotaSnapshot, QuotaWindow } from "./types";
 
 export const LIMIT_PINS_KEY = "limit-pins:v1";
 
@@ -105,7 +105,7 @@ export function parseLimitPins(raw: unknown): LimitPins {
     for (const item of value.pins) {
       if (
         !isRecord(item) ||
-        (item.provider !== "codex" && item.provider !== "claude") ||
+        !isProviderId(item.provider) ||
         !nonEmpty(item.providerKey) ||
         !nonEmpty(item.source) ||
         !nonEmpty(item.windowId) ||

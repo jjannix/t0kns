@@ -1,6 +1,6 @@
 # t0kns
 
-A Raycast extension for Windows to check Codex and Claude Code subscription limits and reset times.
+A Raycast extension for Windows to check Codex, Claude Code, and GLM Coding Plan subscription limits and reset times.
 
 Pin the limits you actually care about. Quick Check can show your preferred limit and expand when another relevant quota becomes critical, including model-specific caps such as Claude's Opus limit.
 
@@ -16,6 +16,18 @@ Quick Check refreshes share a two-second deadline; slower providers show labeled
 Install Raycast for Windows and sign in to your subscription through the Codex or Claude Code CLI. Codex is enabled by default; Claude Code is experimental and can be enabled in the extension preferences.
 
 If a CLI isn't detected, set its executable path in preferences. Existing custom profiles can also be configured there. t0kns reads quota through the installed CLIs without sending prompts or starting model turns.
+
+## GLM Coding Plan
+
+GLM (Z.ai) is read with an API key instead of a CLI. It is off by default:
+
+1. Create a Coding Plan API key in your [Z.ai account](https://z.ai/manage-apikey/apikey-list) (API Keys, Personal Coding Plan). Standard API keys are billed separately and have not been tested.
+2. In the extension preferences, enable **GLM Coding Plan** and paste the key into **GLM API Key**. Raycast stores it as a password preference.
+3. Open **Check AI Limits**. With GLM enabled but no key, the GLM section asks for one instead of showing an error. If your Coding Plan has expired, it says so.
+
+t0kns sends the key only to `api.z.ai`, in the request that reads your limits, and never writes it to its cache, diagnostics, or error messages. Only Z.ai keys against `api.z.ai` are verified; there is no region setting, and keys for the mainland service (bigmodel.cn) are not supported.
+
+GLM reports three limits: the **5-hour** and **Weekly** limits, which count as account-wide limits, and a **Monthly** limit on MCP tool calls (web search, web reader, Zread). The MCP limit doesn't cap model usage, so like Claude's model caps it stays out of Smart and All Windows and shows in Quick Check only when pinned. Its row also shows how your calls split across tools. The reading comes from an undocumented Z.ai endpoint, which may change without notice.
 
 ## Limit Pins
 

@@ -83,3 +83,8 @@ export function positiveNumber(value: unknown): number | undefined {
   const number = finiteNumber(value);
   return number !== undefined && number > 0 ? number : undefined;
 }
+
+/** Providers report Unix seconds or milliseconds. Values this large are already milliseconds (1e11 s is past year 5000). */
+export function unixToEpochMs(value: number): number {
+  return value >= 1e11 ? Math.round(value) : Math.round(value * 1000);
+}

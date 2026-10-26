@@ -6,7 +6,10 @@ const DAY_MS = 24 * HOUR_MS;
 const MINUTES_PER_DAY = 24 * 60;
 const MINUTES_PER_WEEK = 7 * MINUTES_PER_DAY;
 
-const PROVIDER_TITLES: Record<ProviderId, string> = { codex: "Codex", claude: "Claude Code" };
+const PROVIDER_TITLES: Record<ProviderId, string> = { codex: "Codex", claude: "Claude Code", glm: "GLM" };
+
+/** For providers whose title is too long for a shared HUD. */
+const PROVIDER_SHORT_TITLES: Partial<Record<ProviderId, string>> = { claude: "Claude" };
 
 const PLAN_LABELS: Record<string, string> = {
   free: "Free",
@@ -22,6 +25,10 @@ const PLAN_LABELS: Record<string, string> = {
 
 export function providerTitle(provider: ProviderId): string {
   return PROVIDER_TITLES[provider];
+}
+
+export function providerShortTitle(provider: ProviderId): string {
+  return PROVIDER_SHORT_TITLES[provider] ?? PROVIDER_TITLES[provider];
 }
 
 export function planLabel(plan: string | undefined): string | undefined {
