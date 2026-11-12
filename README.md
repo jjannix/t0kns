@@ -15,7 +15,7 @@ Quick Check refreshes share a two-second deadline; slower providers show labeled
 
 Install Raycast for Windows and sign in to your subscription through the Codex or Claude Code CLI. Codex is enabled by default; Claude Code is experimental and can be enabled in the extension preferences.
 
-If a CLI isn't detected, set its executable path in preferences. Existing custom profiles can also be configured there. t0kns reads quota through the installed CLIs without sending prompts or starting model turns.
+If a CLI isn't detected, set its executable path in preferences. Existing custom profiles can also be configured there. t0kns reads quota through the installed CLIs without sending prompts or starting model turns. Claude saved resets use an additional read-only request, described below.
 
 ## Limit Pins
 
@@ -45,6 +45,14 @@ With no pins for the enabled profiles, Limit Pins uses Smart. Existing Smart and
 Pinned rows have a pin icon; the preferred row has a star. Use **Unpin from Quick Check** on a row, or **Manage Limit Pins** in the actions to change your preferred pin and remove saved choices, including limits no longer reported or providers you've disabled.
 
 Pins are saved locally per provider profile and survive quota cache refreshes. Disabled profiles keep their pins for when they're enabled again; if the preferred provider is disabled, Quick Check uses the next enabled pin. Missing pinned limits show as unavailable. Cached readings, failed refreshes, and passed resets still show warnings.
+
+## Saved limit resets
+
+**Check AI Limits** shows **Limit resets** when Codex or Claude reports saved resets, including their expiry dates. Quick Check points them out when an account-wide limit is exhausted or a saved reset is close to expiring. Redeem resets through the provider; t0kns never uses them automatically.
+
+Claude Code's experimental quota interface doesn't request saved reset inventory. When it is missing, t0kns reads the selected Claude profile's `.credentials.json` and makes one read-only request to Anthropic's OAuth usage endpoint. This uses an unexpired Claude subscription token with `user:profile` scope; it never refreshes or saves tokens, and never saves grant identifiers. Custom config folders, including `CLAUDE_CONFIG_DIR`, are respected. Environment-token sign-ins and custom API endpoints are not used for this extra request.
+
+If credentials aren't available, or the optional request fails or takes longer than 1.5 seconds, normal quota remains available and saved resets stay unknown rather than being shown as zero. Quick Check's shared two-second deadline still applies.
 
 ## Reset reminders
 

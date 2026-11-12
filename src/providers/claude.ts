@@ -17,6 +17,7 @@ import {
 import { isDirectory, normalizeUserPath, resolveClaudeExecutable, ResolvedExecutable } from "../system/executables";
 import { ProcessExit, spawnManaged } from "../system/processes";
 import { ClaudeControlClient, ControlResponseError } from "./claude-control";
+import { readClaudeResetInventory } from "./claude-resets";
 import { RpcClosedError, RpcProtocolError, RpcTimeoutError } from "./codex-rpc";
 import {
   BoundedTail,
@@ -173,7 +174,18 @@ export async function probeClaude(options: ClaudeProbeOptions, signal?: AbortSig
     // Skips the scan of local transcripts that only feeds the /usage dialog's breakdown.
     const usage = await call("get_usage", { skip_behaviors: true });
 
-    return normalizeClaudeUsage(usage, { ...session, profile: options.profile, checkedAt: now() });
+    const snapshot = normalizeClaudeUsage(usage, { ...session, profile: options.profile, checkedAt: now() });
+    if (snapshot.resets === undefined) {
+      const inventory = await readClaudeResetInventory({
+        session,
+        configDir: options.configDir,
+        env: options.env ?? process.env,
+        signal: controller.signal,
+      });
+      controller.signal.throwIfAborted();
+      snapshot.resets = parseClaudeResets(inventory, now());
+    }
+    return snapshot;
   } catch (error) {
     // Let the exit event land so an early crash is reported as such rather than as a closed pipe.
     if (error instanceof RpcClosedError && !exit) {
@@ -368,8 +380,8 @@ export function parseUsageBreakdown(value: unknown, weekly: QuotaWindow | undefi
 /**
  * Saved usage-limit resets ("Reset for free" on claude.ai) from the `cedar_ember` block, shaped
  * `{ eligible, grants: [{ resets_left, starts_at, ends_at, paused }] }` as observed by CodexBar. Claude Code's
- * `get_usage` reads the usage endpoint without opting into this block, so it is usually null; it is read
- * whenever present. Grant identifiers are redemption handles and are never read. A grant that is paused,
+ * `get_usage` doesn't opt into this block, so a separate read-only OAuth request supplies it when absent.
+ * Grant identifiers are redemption handles and are never read. A grant that is paused,
  * not yet started, expired, or has an unreadable bound is left out without hiding the others.
  */
 export function parseClaudeResets(value: unknown, checkedAt: number): LimitResets | undefined {
@@ -377,7 +389,7 @@ export function parseClaudeResets(value: unknown, checkedAt: number): LimitReset
     return undefined;
   }
   let available = 0;
-  const items: LimitReset[] = [];
+  const grants: { count: number; expiresAt?: number }[] = [];
   for (const grant of value.grants) {
     if (!isRecord(grant) || grant.paused !== false) {
       continue;
@@ -392,11 +404,16 @@ export function parseClaudeResets(value: unknown, checkedAt: number): LimitReset
       continue;
     }
     available += left;
-    for (let i = 0; i < left && items.length < MAX_LISTED_RESETS; i++) {
-      items.push({ expiresAt: endsAt });
+    grants.push({ count: left, expiresAt: endsAt });
+  }
+  // Cap after sorting, so a large open-ended grant can't hide resets that expire sooner.
+  const items: LimitReset[] = [];
+  for (const grant of grants.sort(byExpiry)) {
+    for (let i = 0; i < grant.count && items.length < MAX_LISTED_RESETS; i++) {
+      items.push({ expiresAt: grant.expiresAt });
     }
   }
-  return { available, items: items.sort(byExpiry) };
+  return { available, items };
 }
 
 /** An absent bound is open (undefined); a supplied but unreadable one is malformed (null), never open. */
