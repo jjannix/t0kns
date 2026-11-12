@@ -23,8 +23,23 @@ export interface ClaudeResetReadOptions {
  */
 export async function readClaudeResetInventory(options: ClaudeResetReadOptions): Promise<unknown> {
   const { session, env } = options;
+  // Recent CLIs omit tokenSource from initialize. A signed-in first-party account can still
+  // use its profile credentials, but never substitute them for explicitly configured auth.
+  const profileSession =
+    session.tokenSource === "claude.ai" ||
+    (session.tokenSource === undefined &&
+      session.apiProvider === "firstParty" &&
+      !!session.email &&
+      !session.apiKeySource);
+  const externalAuth = [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+  ].some((name) => nonEmptyString(env[name]));
   if (
-    session.tokenSource !== "claude.ai" ||
+    !profileSession ||
+    externalAuth ||
     (session.apiProvider !== undefined && session.apiProvider !== "firstParty") ||
     (env.ANTHROPIC_BASE_URL && env.ANTHROPIC_BASE_URL !== "https://api.anthropic.com")
   ) {
@@ -53,12 +68,17 @@ export async function readClaudeResetInventory(options: ClaudeResetReadOptions):
       return undefined;
     }
 
+    // Anthropic gates reset inventory by client surface. Without the CLI identity it returns
+    // eligible:false / ineligible_reason:"surface", even when the account has saved resets.
+    const version =
+      session.cliVersion && /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(session.cliVersion) ? session.cliVersion : "2.1.0";
     const response = await (options.fetch ?? fetch)(RESET_USAGE_URL, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/json",
         "anthropic-beta": "oauth-2025-04-20",
+        "User-Agent": `claude-cli/${version} (external, cli)`,
       },
       redirect: "error",
       signal,

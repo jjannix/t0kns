@@ -101,6 +101,7 @@ test("the optional OAuth read uses the explicit profile, fixed endpoint, and rea
     assert.equal(init?.redirect, "error");
     assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer test-token");
     assert.equal(new Headers(init?.headers).get("anthropic-beta"), "oauth-2025-04-20");
+    assert.equal(new Headers(init?.headers).get("User-Agent"), "claude-cli/2.1.0 (external, cli)");
     assert.ok(init?.signal);
     return Response.json({ cedar_ember: INVENTORY });
   });
@@ -108,6 +109,30 @@ test("the optional OAuth read uses the explicit profile, fixed endpoint, and rea
   assert.deepEqual(await readClaudeResetInventory(options), INVENTORY);
   options.configDir = undefined;
   options.env.CLAUDE_CONFIG_DIR = configDir;
+  assert.deepEqual(await readClaudeResetInventory(options), INVENTORY);
+});
+
+test("the inventory request identifies the CLI surface using a safe CLI version", async (t) => {
+  const configDir = await profile(t);
+  for (const cliVersion of ["2.1.321", "2.1.321-beta.1", undefined, "invalid\r\nheader"]) {
+    const expectedVersion = cliVersion?.startsWith("2.1.321") ? cliVersion : "2.1.0";
+    const options = readOptions(configDir, async (_url, init) => {
+      // Model the live endpoint: a generic HTTP client is ineligible, regardless of saved grants.
+      const cliSurface =
+        new Headers(init?.headers).get("User-Agent") === `claude-cli/${expectedVersion} (external, cli)`;
+      return Response.json({
+        cedar_ember: cliSurface ? INVENTORY : { eligible: false, ineligible_reason: "surface", grants: [] },
+      });
+    });
+    options.session.cliVersion = cliVersion;
+    assert.deepEqual(await readClaudeResetInventory(options), INVENTORY);
+  }
+});
+
+test("recent CLI sessions without tokenSource still read the signed-in profile", async (t) => {
+  const configDir = await profile(t);
+  const options = readOptions(configDir, async () => Response.json({ cedar_ember: INVENTORY }));
+  options.session = { email: "account@example.test", apiProvider: "firstParty", cliVersion: "2.1.321" };
   assert.deepEqual(await readClaudeResetInventory(options), INVENTORY);
 });
 
@@ -130,6 +155,28 @@ test("other auth sources and custom endpoints never trigger the extra request", 
     await readClaudeResetInventory({ ...options, env: { ANTHROPIC_BASE_URL: "https://example.com" } }),
     undefined,
   );
+  for (const name of [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+  ]) {
+    for (const session of [options.session, { email: "account@example.test", apiProvider: "firstParty" }]) {
+      assert.equal(
+        await readClaudeResetInventory({ ...options, session, env: { [name]: "external-auth" } }),
+        undefined,
+      );
+    }
+  }
+  for (const session of [
+    { apiProvider: "firstParty" },
+    { email: "account@example.test" },
+    { email: "account@example.test", apiProvider: "bedrock" },
+    { email: "account@example.test", apiProvider: "firstParty", apiKeySource: "apiKeyHelper" },
+    { email: "account@example.test", apiProvider: "firstParty", tokenSource: "none" },
+  ]) {
+    assert.equal(await readClaudeResetInventory({ ...options, session }), undefined);
+  }
   assert.equal(requests, 0);
 });
 
@@ -213,7 +260,7 @@ test("the CLI probe supplements missing inventory, skips reported inventory, and
     for await (const line of createInterface({ input: process.stdin })) {
       const message = JSON.parse(line);
       const response = message.request.subtype === "initialize"
-        ? { account: { tokenSource: "claude.ai", apiProvider: "firstParty" } }
+        ? { account: { email: "account@example.test", apiProvider: "firstParty" }, claude_code_version: "2.1.321" }
         : JSON.parse(process.env.TEST_USAGE);
       console.log(JSON.stringify({ type: "control_response", response: {
         subtype: "success", request_id: message.request_id, response
